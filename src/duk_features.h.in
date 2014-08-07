@@ -2667,6 +2667,15 @@ typedef FILE duk_file;
 #endif
 
 /*
+ *  Optional C API options
+ */
+
+#define DUK_USE_BYTECODE_DUMP_SUPPORT
+#if defined(DUK_OPT_NO_BYTECODE_DUMP_SUPPORT)
+#undef DUK_USE_BYTECODE_DUMP_SUPPORT
+#endif
+
+/*
  *  Tailcalls
  */
 
