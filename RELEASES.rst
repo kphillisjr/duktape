@@ -1009,4 +1009,3 @@ Planned
 
 * Ecmascript 6 features will be implemented in v2.x.x at the earliest
   (some individual features may be cherry picked into v1.x.x)
-
