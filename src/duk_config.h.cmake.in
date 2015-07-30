@@ -1,0 +1,4 @@
+#ifndef __DUK_CONFIG_H__
+#define __DUK_CONFIG_H__ 1
+#include "duk_features_cmake.h"
+#endif
