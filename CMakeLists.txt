@@ -16,7 +16,6 @@ MATH( EXPR DUKTAPE_COMPACT_VERSION "
 		100 * ${DUKTAPE_MINOR_VERSION}   +
 		${DUKTAPE_PATCH_VERSION}"
 		)
-
 if(EXISTS "${PROJECT_SOURCE_DIR}/.git/config")
 	find_package(Git)
 
@@ -65,132 +64,151 @@ endif()
 if(NOT EXISTS "${PROJECT_BINARY_DIR}/src")
 	file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/src")
 endif()
-
-if(NOT EXISTS "${PROJECT_BINARY_DIR}/src/duk_unicode_ids_noa.c")
-	if(NOT PYTHON_EXECUTABLE)
-		message(FATAL "Unable to Continue Configuration, Python Interpreter is required.")
-	ENDIF()
-	message(STATUS "Preparing Unicode Data:")
-	EXECUTE_PROCESS(COMMAND
-		${PYTHON_EXECUTABLE} "src/prepare_unicode_data.py" "src/UnicodeData.txt" "${PROJECT_BINARY_DIR}/UnicodeData-expanded.tmp"
-		WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-		OUTPUT_VARIABLE EXTRACT_UNICODE_DATA)
-	message(STATUS "Extracting Case Conventions:")
-	EXECUTE_PROCESS(COMMAND
-		${PYTHON_EXECUTABLE} "${PROJECT_SOURCE_DIR}/src/extract_caseconv.py"
-			"--unicode-data=UnicodeData-expanded.tmp"
-			"--special-casing=${PROJECT_SOURCE_DIR}/src/SpecialCasing.txt"
-			"--out-source=src/duk_unicode_caseconv.c"
-			"--out-header=src/duk_unicode_caseconv.h"
-			"--table-name-lc=duk_unicode_caseconv_lc"
-			"--table-name-uc=duk_unicode_caseconv_uc"
-			WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-			OUTPUT_VARIABLE EXTRACT_CASECONV
-		)
-	message(STATUS "Extracting Character Maps:")
-	function(duktape_extract_chars include_cat exclude_cat out_desc)
-		#message( STATUS "Extracting Characters\n\tInclude: ${include_cat}\n\tExclude: ${exclude_cat}")
+if(PYTHONINTERP_FOUND)
+	if(NOT EXISTS "${PROJECT_BINARY_DIR}/src/duk_unicode_ids_noa.c")
+		if(NOT PYTHON_EXECUTABLE)
+			message(FATAL "Unable to Continue Configuration, Python Interpreter is required.")
+		ENDIF()
+		message(STATUS "Preparing Unicode Data:")
 		EXECUTE_PROCESS(COMMAND
-		${PYTHON_EXECUTABLE} "${PROJECT_SOURCE_DIR}/src/extract_chars.py"
+			${PYTHON_EXECUTABLE} "src/prepare_unicode_data.py" "src/UnicodeData.txt" "${PROJECT_BINARY_DIR}/UnicodeData-expanded.tmp"
+			WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+			OUTPUT_VARIABLE EXTRACT_UNICODE_DATA)
+		message(STATUS "Extracting Case Conventions:")
+		EXECUTE_PROCESS(COMMAND
+			${PYTHON_EXECUTABLE} "${PROJECT_SOURCE_DIR}/src/extract_caseconv.py"
 				"--unicode-data=UnicodeData-expanded.tmp"
-				"--include-categories=\"${include_cat}\""
-				"--exclude-categories=\"${exclude_cat}\""
-				"--out-source=src/duk_unicode_${out_desc}.c "
-				"--out-header=src/duk_unicode_${out_desc}.h"
-				"--table-name=duk_unicode_${out_desc}"
+				"--special-casing=${PROJECT_SOURCE_DIR}/src/SpecialCasing.txt"
+				"--out-source=src/duk_unicode_caseconv.c"
+				"--out-header=src/duk_unicode_caseconv.h"
+				"--table-name-lc=duk_unicode_caseconv_lc"
+				"--table-name-uc=duk_unicode_caseconv_uc"
+				WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+				OUTPUT_VARIABLE EXTRACT_CASECONV
+			)
+		message(STATUS "Extracting Character Maps:")
+		function(duktape_extract_chars include_cat exclude_cat out_desc)
+			message( STATUS "Generating Unicode Table: duk_unicode_${out_desc}")
+			EXECUTE_PROCESS(COMMAND
+			${PYTHON_EXECUTABLE} "${PROJECT_SOURCE_DIR}/src/extract_chars.py"
+					"--unicode-data=UnicodeData-expanded.tmp"
+					"--include-categories=\"${include_cat}\""
+					"--exclude-categories=\"${exclude_cat}\""
+					"--out-source=src/duk_unicode_${out_desc}.c "
+					"--out-header=src/duk_unicode_${out_desc}.h"
+					"--table-name=duk_unicode_${out_desc}"
+			
+			WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+			OUTPUT_VARIABLE EXTRACT_CHARS_${out_desc})
+		endfunction(duktape_extract_chars)
+		#Prepare Unicode Data Extraction
 		
-		WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-		OUTPUT_VARIABLE EXTRACT_CHARS_${out_desc})
-	endfunction(duktape_extract_chars)
-	#Prepare Unicode Data Extraction
-	
-	# Whitespace (unused now)
-	set(WHITESPACE_INCL "Zs") # USP = Any other Unicode space separator
-	set(WHITESPACE_EXCL "NONE")
-	# Unicode letter (unused now)
-	set(LETTER_INCL "Lu,Ll,Lt,Lm,Lo")
-	set(LETTER_EXCL  "NONE")
-	set(LETTER_NOA_INCL "Lu,Ll,Lt,Lm,Lo")
-	set(LETTER_NOA_EXCL "ASCII")
-	set(LETTER_NOABMP_INCL "${LETTER_NOA_INCL}")
-	set(LETTER_NOABMP_EXCL "ASCII,NONBMP")
-	
-	# Identifier start
-	# E5 Section 7.6
-	set(IDSTART_INCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F")
-	set(IDSTART_EXCL "NONE")
-	set(IDSTART_NOA_INCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F")
-	set(IDSTART_NOA_EXCL "ASCII")
-	set(IDSTART_NOABMP_INCL "${IDSTART_NOA_INCL}")
-	set(IDSTART_NOABMP_EXCL "ASCII,NONBMP")
+		# Whitespace (unused now)
+		set(WHITESPACE_INCL "Zs") # USP = Any other Unicode space separator
+		set(WHITESPACE_EXCL "NONE")
+		# Unicode letter (unused now)
+		set(LETTER_INCL "Lu,Ll,Lt,Lm,Lo")
+		set(LETTER_EXCL  "NONE")
+		set(LETTER_NOA_INCL "Lu,Ll,Lt,Lm,Lo")
+		set(LETTER_NOA_EXCL "ASCII")
+		set(LETTER_NOABMP_INCL "${LETTER_NOA_INCL}")
+		set(LETTER_NOABMP_EXCL "ASCII,NONBMP")
+		
+		# Identifier start
+		# E5 Section 7.6
+		set(IDSTART_INCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F")
+		set(IDSTART_EXCL "NONE")
+		set(IDSTART_NOA_INCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F")
+		set(IDSTART_NOA_EXCL "ASCII")
+		set(IDSTART_NOABMP_INCL "${IDSTART_NOA_INCL}")
+		set(IDSTART_NOABMP_EXCL "ASCII,NONBMP")
 
-	# Identifier start - Letter: allows matching of (rarely needed) 'Letter'
-	# production space efficiently with the help of IdentifierStart.  The
-	# 'Letter' production is only needed in case conversion of Greek final
-	# sigma.
-	set(IDSTART_MINUS_LETTER_INCL "${IDSTART_NOA_INCL}")
-	set(IDSTART_MINUS_LETTER_EXCL "Lu,Ll,Lt,Lm,Lo")
-	set(IDSTART_MINUS_LETTER_NOA_INCL "${IDSTART_NOA_INCL}")
-	set(IDSTART_MINUS_LETTER_NOA_EXCL "Lu,Ll,Lt,Lm,Lo,ASCII")
-	set(IDSTART_MINUS_LETTER_NOABMP_INCL "${IDSTART_NOA_INCL}")
-	set(IDSTART_MINUS_LETTER_NOABMP_EXCL "Lu,Ll,Lt,Lm,Lo,ASCII,NONBMP")
+		# Identifier start - Letter: allows matching of (rarely needed) 'Letter'
+		# production space efficiently with the help of IdentifierStart.  The
+		# 'Letter' production is only needed in case conversion of Greek final
+		# sigma.
+		set(IDSTART_MINUS_LETTER_INCL "${IDSTART_NOA_INCL}")
+		set(IDSTART_MINUS_LETTER_EXCL "Lu,Ll,Lt,Lm,Lo")
+		set(IDSTART_MINUS_LETTER_NOA_INCL "${IDSTART_NOA_INCL}")
+		set(IDSTART_MINUS_LETTER_NOA_EXCL "Lu,Ll,Lt,Lm,Lo,ASCII")
+		set(IDSTART_MINUS_LETTER_NOABMP_INCL "${IDSTART_NOA_INCL}")
+		set(IDSTART_MINUS_LETTER_NOABMP_EXCL "Lu,Ll,Lt,Lm,Lo,ASCII,NONBMP")
 
-	# Identifier start - Identifier part
-	# E5 Section 7.6: IdentifierPart, but remove IdentifierStart (already above)
-	set(IDPART_MINUS_IDSTART_INCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F,Mn,Mc,Nd,Pc,200C,200D")
-	set(IDPART_MINUS_IDSTART_EXCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F")
-	set(IDPART_MINUS_IDSTART_NOA_INCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F,Mn,Mc,Nd,Pc,200C,200D")
-	set(IDPART_MINUS_IDSTART_NOA_EXCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F,ASCII")
-	set(IDPART_MINUS_IDSTART_NOABMP_INCL "${IDPART_MINUS_IDSTART_NOA_INCL}")
-	set(IDPART_MINUS_IDSTART_NOABMP_EXCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F,ASCII,NONBMP")
+		# Identifier start - Identifier part
+		# E5 Section 7.6: IdentifierPart, but remove IdentifierStart (already above)
+		set(IDPART_MINUS_IDSTART_INCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F,Mn,Mc,Nd,Pc,200C,200D")
+		set(IDPART_MINUS_IDSTART_EXCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F")
+		set(IDPART_MINUS_IDSTART_NOA_INCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F,Mn,Mc,Nd,Pc,200C,200D")
+		set(IDPART_MINUS_IDSTART_NOA_EXCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F,ASCII")
+		set(IDPART_MINUS_IDSTART_NOABMP_INCL "${IDPART_MINUS_IDSTART_NOA_INCL}")
+		set(IDPART_MINUS_IDSTART_NOABMP_EXCL "Lu,Ll,Lt,Lm,Lo,Nl,0024,005F,ASCII,NONBMP")
 
-	duktape_extract_chars( "${WHITESPACE_INCL}" "${WHITESPACE_EXCL}" "ws")
-	duktape_extract_chars( "${LETTER_INCL}" "${LETTER_EXCL}" "let")
-	duktape_extract_chars( "${LETTER_NOA_INCL}" "${LETTER_NOA_EXCL}" "let_noa")
-	duktape_extract_chars( "${LETTER_NOABMP_INCL}" "${LETTER_NOABMP_EXCL}" "let_noabmp")
-	duktape_extract_chars( "${IDSTART_INCL}" "${IDSTART_EXCL}" "ids")
-	duktape_extract_chars( "${IDSTART_NOA_INCL}" "${IDSTART_NOA_EXCL}" "ids_noa")
-	duktape_extract_chars( "${IDSTART_NOABMP_INCL}" "${IDSTART_NOABMP_EXCL}" "ids_noabmp")
-	duktape_extract_chars( "${IDSTART_MINUS_LETTER_INCL}" "${IDSTART_MINUS_LETTER_EXCL}" "ids_m_let")
-	duktape_extract_chars( "${IDSTART_MINUS_LETTER_NOA_INCL}" "${IDSTART_MINUS_LETTER_NOA_EXCL}" "ids_m_let_noa")
-	duktape_extract_chars( "${IDSTART_MINUS_LETTER_NOABMP_INCL}" "${IDSTART_MINUS_LETTER_NOABMP_EXCL}" "ids_m_let_noabmp")
-	duktape_extract_chars( "${IDPART_MINUS_IDSTART_INCL}" "${IDPART_MINUS_IDSTART_EXCL}" "idp_m_ids")
-	duktape_extract_chars( "${IDPART_MINUS_IDSTART_NOA_INCL}" "${IDPART_MINUS_IDSTART_NOA_EXCL}" "idp_m_ids_noa")
-	duktape_extract_chars( "${IDPART_MINUS_IDSTART_NOABMP_INCL}" "${IDPART_MINUS_IDSTART_NOABMP_EXCL}" "idp_m_ids_noabmp")
-endif()
+		duktape_extract_chars( "${WHITESPACE_INCL}" "${WHITESPACE_EXCL}" "ws")
+		duktape_extract_chars( "${LETTER_INCL}" "${LETTER_EXCL}" "let")
+		duktape_extract_chars( "${LETTER_NOA_INCL}" "${LETTER_NOA_EXCL}" "let_noa")
+		duktape_extract_chars( "${LETTER_NOABMP_INCL}" "${LETTER_NOABMP_EXCL}" "let_noabmp")
+		duktape_extract_chars( "${IDSTART_INCL}" "${IDSTART_EXCL}" "ids")
+		duktape_extract_chars( "${IDSTART_NOA_INCL}" "${IDSTART_NOA_EXCL}" "ids_noa")
+		duktape_extract_chars( "${IDSTART_NOABMP_INCL}" "${IDSTART_NOABMP_EXCL}" "ids_noabmp")
+		duktape_extract_chars( "${IDSTART_MINUS_LETTER_INCL}" "${IDSTART_MINUS_LETTER_EXCL}" "ids_m_let")
+		duktape_extract_chars( "${IDSTART_MINUS_LETTER_NOA_INCL}" "${IDSTART_MINUS_LETTER_NOA_EXCL}" "ids_m_let_noa")
+		duktape_extract_chars( "${IDSTART_MINUS_LETTER_NOABMP_INCL}" "${IDSTART_MINUS_LETTER_NOABMP_EXCL}" "ids_m_let_noabmp")
+		duktape_extract_chars( "${IDPART_MINUS_IDSTART_INCL}" "${IDPART_MINUS_IDSTART_EXCL}" "idp_m_ids")
+		duktape_extract_chars( "${IDPART_MINUS_IDSTART_NOA_INCL}" "${IDPART_MINUS_IDSTART_NOA_EXCL}" "idp_m_ids_noa")
+		duktape_extract_chars( "${IDPART_MINUS_IDSTART_NOABMP_INCL}" "${IDPART_MINUS_IDSTART_NOABMP_EXCL}" "idp_m_ids_noabmp")
+	endif()
 
-if(NOT EXISTS "${PROJECT_BINARY_DIR}/buildparams.json")
-	if(NOT PYTHON_EXECUTABLE)
-		message(FATAL "Unable to Continue Configuration, Python Interpreter is required.")
-	ENDIF()
-	message(STATUS "Generating Build Parameters:")
-	EXECUTE_PROCESS(COMMAND
-		${PYTHON_EXECUTABLE} "${PROJECT_SOURCE_DIR}/src/genbuildparams.py"
-		"--version=${DUKTAPE_COMPACT_VERSION}"
-		"--git-describe=${GIT_DESCRIBE}"
-		"--out-json=buildparams.json"
-		"--out-header=src/duk_buildparams.h"
-		WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-		OUTPUT_VARIABLE GEN_BUILD_PARAMS_DATA
-	)
-endif()
-if(NOT EXISTS "${PROJECT_BINARY_DIR}/src/duk_builtins.c")
-	if(NOT PYTHON_EXECUTABLE)
-		message(FATAL "Unable to Continue Configuration, Python Interpreter is required.")
-	ENDIF()
-	message(STATUS "Generating Built-ins:")		
-	EXECUTE_PROCESS(COMMAND
-		${PYTHON_EXECUTABLE} "${PROJECT_SOURCE_DIR}/src/genbuiltins.py"
-		"--buildinfo=buildparams.json"
-		"--initjs-data=${PROJECT_SOURCE_DIR}/src/duk_initjs.js"
-		"--out-header=src/duk_builtins.h"
-		"--out-source=src/duk_builtins.c"
-		"--out-metadata-json=duk_build_meta.json"
-		WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-		OUTPUT_VARIABLE GEN_BUILD_PARAMS_DATA
+
+
+	if(NOT EXISTS "${PROJECT_SOURCE_DIR}/src/duk_config.h" AND NOT EXISTS "${PROJECT_BINARY_DIR}/src/duk_config.h")
+		if(NOT PYTHON_EXECUTABLE)
+			message(FATAL "Unable to Continue Configuration, Python Interpreter is required.")
+		ENDIF()
+		message(STATUS "Generating Config Parameters:")
+		EXECUTE_PROCESS(COMMAND
+			${PYTHON_EXECUTABLE} "config/genconfig.py"
+			"--metadata=config"
+			"--output=${PROJECT_BINARY_DIR}/src/duk_config.h"
+			"generate-autodetect-header"
+			WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+			OUTPUT_FILE genconfig.txt
+			OUTPUT_VARIABLE GEN_BUILD_PARAMS_DATA
 		)
-endif()
-
+	endif()	
+	if(NOT EXISTS "${PROJECT_BINARY_DIR}/buildparams.json")
+		if(NOT PYTHON_EXECUTABLE)
+			message(FATAL "Unable to Continue Configuration, Python Interpreter is required.")
+		ENDIF()
+		message(STATUS "Generating Build Parameters:")
+		EXECUTE_PROCESS(COMMAND
+			${PYTHON_EXECUTABLE} "src/genbuildparams.py"
+			"--version=${DUKTAPE_COMPACT_VERSION}"
+			"--git-describe=${GIT_DESCRIBE}"
+			"--out-json=buildparams.json"
+			"--out-header=src/duk_buildparams.h"
+			WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+			OUTPUT_FILE genbuildparms.txt
+			OUTPUT_VARIABLE GEN_BUILD_PARAMS_DATA
+		)
+	endif()
+	if(NOT EXISTS "${PROJECT_SOURCE_DIR}/src/duk_builtins.c")
+		if(NOT PYTHON_EXECUTABLE)
+			message(FATAL "Unable to Continue Configuration, Python Interpreter is required.")
+		ENDIF()
+		message(STATUS "Generating Built-ins:")		
+		EXECUTE_PROCESS(COMMAND
+			${PYTHON_EXECUTABLE} "src/genbuiltins.py"
+			"--buildinfo=buildparams.json"
+			"--initjs-data=src/duk_initjs.js"
+			"--out-header=src/duk_builtins.h"
+			"--out-source=src/duk_builtins.c"
+			"--out-metadata-json=duk_build_meta.json"
+			WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+			OUTPUT_FILE genbuiltins.txt
+			OUTPUT_VARIABLE GEN_BUILD_PARAMS_DATA
+			)
+	endif()
+endif(PYTHONINTERP_FOUND)
 file(STRINGS license.txt LICENSE_TXT_FILE)
 file(READ AUTHORS.rst AUTHORS_RST_FILE)
 set(LICENSE_TXT "")
@@ -205,8 +223,7 @@ configure_file(src/duk_api_public.h.cmake.in duk_api_public.h)
 configure_file(src/duk_dblunion.h.cmake.in duk_dblunion.h)
 file(READ "${PROJECT_BINARY_DIR}/duk_api_public.h" DUK_API_PUBLIC_H)
 file(READ "${PROJECT_BINARY_DIR}/duk_dblunion.h" DUK_DBLUNION_H)
-configure_file(src/duk_builtins.h.cmake.in src/duk_builtins.h)
-configure_file(src/duk_config.h.cmake.in src/duk_config.h)
+#configure_file(src/duk_config.h.cmake.in src/duk_config.h)
 
 # Create The Core Include file.
 configure_file(src/duktape.h.cmake.in src/duktape.h)
