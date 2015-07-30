@@ -1,6 +1,6 @@
 /*
  *  Determine platform features, select feature selection defines
- *  (e.g. _XOPEN_SOURCE), include system headers, and define DUK_USE_XXX
+ *  (e.g. _XOPEN_SOURCE), include system headers, and define DUK_USE_xxx
  *  defines which are (only) checked in Duktape internal code for
  *  activated features.  Duktape feature selection is based on automatic
  *  feature detection, user supplied DUK_OPT_xxx defines, and optionally
@@ -24,7 +24,7 @@
  *    - Duktape Date provider settings
  *    - Final sanity checks
  *
- *  DUK_F_XXX are internal feature detection macros which should not be
+ *  DUK_F_xxx are internal feature detection macros which should not be
  *  used outside this header.
  *
  *  Useful resources:
@@ -78,7 +78,7 @@ static __inline__ unsigned long long duk_rdtsc(void) {
 	__asm__ volatile (".byte 0x0f, 0x31" : "=A" (x));
 	return x;
 }
-#define DUK_RDTSC_AVAILABLE 1
+#define DUK_USE_RDTSC()  duk_rdtsc()
 #elif defined(__GNUC__) && defined(__x86_64__) && defined(DUK_F_C99) && \
     !defined(__cplusplus) /* unsigned long long not standard */
 static __inline__ unsigned long long duk_rdtsc(void) {
@@ -86,10 +86,10 @@ static __inline__ unsigned long long duk_rdtsc(void) {
 	__asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
 	return ((unsigned long long) lo) | (((unsigned long long) hi) << 32);
 }
-#define DUK_RDTSC_AVAILABLE 1
+#define DUK_USE_RDTSC()  duk_rdtsc()
 #else
 /* not available */
-#undef DUK_RDTSC_AVAILABLE
+#undef DUK_USE_RDTSC
 #endif
 
 /*
@@ -301,17 +301,6 @@ static __inline__ unsigned long long duk_rdtsc(void) {
 
 #if defined(__VBCC__)
 #define DUK_F_VBCC
-#endif
-
-#if (defined(DUK_F_C99) || defined(DUK_F_CPP11)) && \
-    !defined(DUK_F_BCC)
-/* ULL / LL preprocessor constants should be avoided because they're not
- * always available.  With suitable options, some compilers will support
- * 64-bit integer types but won't support ULL / LL preprocessor constants.
- * Assume C99/C++11 environments have these.  However, BCC is nominally
- * C99 but doesn't support these constants.
- */
-#define DUK_F_ULL_CONSTS
 #endif
 
 /*
@@ -580,6 +569,17 @@ static __inline__ unsigned long long duk_rdtsc(void) {
 #endif
 #include <math.h>
 
+#if (defined(DUK_F_C99) || defined(DUK_F_CPP11)) && \
+    !defined(DUK_F_BCC)
+/* ULL / LL preprocessor constants should be avoided because they're not
+ * always available.  With suitable options, some compilers will support
+ * 64-bit integer types but won't support ULL / LL preprocessor constants.
+ * Assume C99/C++11 environments have these.  However, BCC is nominally
+ * C99 but doesn't support these constants.
+ */
+#define DUK_F_ULL_CONSTS
+#endif
+
 /*
  *  Detection for specific libc variants (like uclibc) and other libc specific
  *  features.  Potentially depends on the #includes above.
@@ -756,6 +756,7 @@ typedef intmax_t duk_intmax_t;
 
 #define DUK_SIZE_MIN          0
 #define DUK_SIZE_MAX          SIZE_MAX
+#undef DUK_SIZE_MAX_COMPUTED
 
 #else  /* C99 types */
 
@@ -1102,7 +1103,8 @@ typedef duk_uint_t duk_ucodepoint_t;
 #define DUK_UCODEPOINT_MIN        DUK_UINT_MIN
 #define DUK_UCODEPOINT_MAX        DUK_UINT_MAX
 
-/* IEEE double typedef. */
+/* IEEE float/double typedef. */
+typedef float duk_float_t;
 typedef double duk_double_t;
 
 /* We're generally assuming that we're working on a platform with a 32-bit
@@ -1122,17 +1124,8 @@ typedef double duk_double_t;
 #endif
 #endif
 
-/* Convenience define: 32-bit pointers.  32-bit platforms are an important
- * footprint optimization target, and this define allows e.g. struct sizes
- * to be organized for compactness.
- */
-
-#undef DUK_USE_32BIT_PTRS
-#if defined(DUK_UINTPTR_MAX) && !defined(DUK_UINTPTR_MAX_COMPUTED)
-#if DUK_UINTPTR_MAX <= 0xffffffffUL
-#define DUK_USE_32BIT_PTRS
-#endif
-#endif
+/* Type for public API calls. */
+typedef struct duk_hthread duk_context;
 
 /*
  *  Check whether we should use 64-bit integers
@@ -1797,19 +1790,6 @@ typedef FILE duk_file;
 	DUK_MEMSET((p), 0, (n))
 
 /*
- *  Avoiding platform function pointers.
- *
- *  On some platforms built-in functions may be implemented as macros or
- *  inline functions, so they can't be necessarily addressed by function
- *  pointers.  This is certainly the case with some platform "polyfills"
- *  which provide missing C99/C++11 functions through macros, and may be
- *  the case with VS2013 (see GH-17).
- */
-
-/* This is now the default: the cost in footprint is negligible. */
-#define DUK_USE_AVOID_PLATFORM_FUNCPTRS
-
-/*
  *  Vararg macro wrappers.  We need va_copy() which is defined in C99 / C++11,
  *  so an awkward replacement is needed for pre-C99 / pre-C++11 environments.
  *  This will quite likely need portability hacks for some non-C99 environments.
@@ -1841,6 +1821,19 @@ typedef FILE duk_file;
 
 #define DUK_ABORT        abort
 #define DUK_EXIT         exit
+
+/*
+ *  Avoiding platform function pointers.
+ *
+ *  On some platforms built-in functions may be implemented as macros or
+ *  inline functions, so they can't be necessarily addressed by function
+ *  pointers.  This is certainly the case with some platform "polyfills"
+ *  which provide missing C99/C++11 functions through macros, and may be
+ *  the case with VS2013 (see GH-17).
+ */
+
+/* This is now the default: the cost in footprint is negligible. */
+#define DUK_USE_AVOID_PLATFORM_FUNCPTRS
 
 /*
  *  Macro hackery to convert e.g. __LINE__ to a string without formatting,
@@ -1985,6 +1978,8 @@ typedef FILE duk_file;
  *  DUK_NOINLINE: avoid inlining a function.
  *  DUK_INLINE: suggest inlining a function.
  *  DUK_ALWAYS_INLINE: force inlining for critical functions.
+ *
+ *  Apply to function definition only (not declaration).
  */
 
 #if defined(DUK_F_CLANG)
@@ -2071,26 +2066,10 @@ typedef FILE duk_file;
 #define DUK_INTERNAL_DECL  extern
 #define DUK_INTERNAL       /*empty*/
 #endif
-#elif defined(DUK_F_MSVC)
-/* Default visibility. */
-#define DUK_EXTERNAL_DECL  extern
-#define DUK_EXTERNAL       /* empty */
-#if defined(DUK_SINGLE_FILE)
-#define DUK_INTERNAL_DECL  static
-#define DUK_INTERNAL       static
-#else  /* DUK_SINGLE_FILE */
-#define DUK_INTERNAL_DECL  extern
-#define DUK_INTERNAL       /*empty*/
-#endif
 #else
 /* Default visibility. */
-#if defined(DUK_SINGLE_FILE)
 #define DUK_EXTERNAL_DECL  extern
 #define DUK_EXTERNAL       /*empty*/
-#else
-#define DUK_EXTERNAL_DECL  /*empty*/
-#define DUK_EXTERNAL       /*empty*/
-#endif
 #if defined(DUK_SINGLE_FILE)
 #define DUK_INTERNAL_DECL  static
 #define DUK_INTERNAL       static
@@ -2297,11 +2276,15 @@ typedef FILE duk_file;
  */
 #define DUK_USE_PREFER_SIZE
 
+/* Use a sliding window for lexer; slightly larger footprint, slightly faster. */
+#define DUK_USE_LEXER_SLIDING_WINDOW
+
 /*
  *  Tagged type representation (duk_tval)
  */
 
 #undef DUK_USE_PACKED_TVAL
+#undef DUK_USE_FULL_TVAL
 
 #if defined(DUK_USE_PACKED_TVAL_POSSIBLE) && !defined(DUK_OPT_NO_PACKED_TVAL)
 #define DUK_USE_PACKED_TVAL
@@ -2495,7 +2478,7 @@ typedef FILE duk_file;
 #define DUK_USE_DPRINT_COLORS
 #endif
 
-#if defined(DUK_RDTSC_AVAILABLE) && defined(DUK_OPT_DPRINT_RDTSC)
+#if defined(DUK_USE_RDTSC) && defined(DUK_OPT_DPRINT_RDTSC)
 #define DUK_USE_DPRINT_RDTSC
 #else
 #undef DUK_USE_DPRINT_RDTSC
@@ -2604,7 +2587,7 @@ typedef FILE duk_file;
 #define DUK_USE_NONSTD_FUNC_CALLER_PROPERTY
 #endif
 
-/* Non-standard Object.prototype.__proto__ (ES6 draft), see
+/* Non-standard Object.prototype.__proto__ (ES6), see
  * test-bi-object-proto-__proto__.js.
  */
 #define DUK_USE_ES6_OBJECT_PROTO_PROPERTY
@@ -2612,7 +2595,7 @@ typedef FILE duk_file;
 #undef DUK_USE_ES6_OBJECT_PROTO_PROPERTY
 #endif
 
-/* Non-standard Object.setPrototypeOf (ES6 draft), see
+/* Non-standard Object.setPrototypeOf (ES6), see
  * test-bi-object-setprototypeof.js.
  */
 #define DUK_USE_ES6_OBJECT_SETPROTOTYPEOF
@@ -2679,6 +2662,15 @@ typedef FILE duk_file;
 #endif
 
 /*
+ *  Optional C API options
+ */
+
+#define DUK_USE_BYTECODE_DUMP_SUPPORT
+#if defined(DUK_OPT_NO_BYTECODE_DUMP_SUPPORT)
+#undef DUK_USE_BYTECODE_DUMP_SUPPORT
+#endif
+
+/*
  *  Tailcalls
  */
 
@@ -2699,7 +2691,7 @@ typedef FILE duk_file;
  */
 
 #if defined(DUK_F_LINUX) || defined(DUK_F_BSD) || defined(DUK_F_WINDOWS) || \
-    defined(DUK_OPT_DEEP_C_STACK)
+    defined(DUK_F_APPLE) || defined(DUK_OPT_DEEP_C_STACK)
 #define DUK_USE_DEEP_C_STACK
 #else
 #undef DUK_USE_DEEP_C_STACK
@@ -2904,6 +2896,17 @@ typedef FILE duk_file;
  *  Miscellaneous
  */
 
+/* Convenience define: 32-bit pointers.  32-bit platforms are an important
+ * footprint optimization target, and this define allows e.g. struct sizes
+ * to be organized for compactness.
+ */
+#undef DUK_USE_32BIT_PTRS
+#if defined(DUK_UINTPTR_MAX) && !defined(DUK_UINTPTR_MAX_COMPUTED)
+#if DUK_UINTPTR_MAX <= 0xffffffffUL
+#define DUK_USE_32BIT_PTRS
+#endif
+#endif
+
 #define DUK_USE_PROVIDE_DEFAULT_ALLOC_FUNCTIONS
 #undef DUK_USE_EXPLICIT_NULL_INIT
 
@@ -2965,6 +2968,67 @@ typedef FILE duk_file;
 #endif
 
 /*
+ *  Date provider selection
+ *
+ *  User may define DUK_USE_DATE_GET_NOW() etc directly, in which case we'll
+ *  rely on an external provider.  If this is not done, revert to previous
+ *  behavior and use Unix/Windows built-in provider.
+ */
+
+#if defined(DUK_COMPILING_DUKTAPE)
+
+#if defined(DUK_USE_DATE_GET_NOW)
+/* External provider already defined. */
+#elif defined(DUK_USE_DATE_NOW_GETTIMEOFDAY)
+DUK_INTERNAL_DECL duk_double_t duk_bi_date_get_now_gettimeofday(duk_context *ctx);
+#define DUK_USE_DATE_GET_NOW(ctx)            duk_bi_date_get_now_gettimeofday((ctx))
+#elif defined(DUK_USE_DATE_NOW_TIME)
+DUK_INTERNAL_DECL duk_double_t duk_bi_date_get_now_time(duk_context *ctx);
+#define DUK_USE_DATE_GET_NOW(ctx)            duk_bi_date_get_now_time((ctx))
+#elif defined(DUK_USE_DATE_NOW_WINDOWS)
+DUK_INTERNAL_DECL duk_double_t duk_bi_date_get_now_windows(duk_context *ctx);
+#define DUK_USE_DATE_GET_NOW(ctx)            duk_bi_date_get_now_windows((ctx))
+#else
+#error no provider for DUK_USE_DATE_GET_NOW()
+#endif
+
+#if defined(DUK_USE_DATE_GET_LOCAL_TZOFFSET)
+/* External provider already defined. */
+#elif defined(DUK_USE_DATE_TZO_GMTIME_R) || defined(DUK_USE_DATE_TZO_GMTIME)
+DUK_INTERNAL_DECL duk_int_t duk_bi_date_get_local_tzoffset_gmtime(duk_double_t d);
+#define DUK_USE_DATE_GET_LOCAL_TZOFFSET(d)   duk_bi_date_get_local_tzoffset_gmtime((d))
+#elif defined(DUK_USE_DATE_TZO_WINDOWS)
+DUK_INTERNAL_DECL duk_int_t duk_bi_date_get_local_tzoffset_windows(duk_double_t d);
+#define DUK_USE_DATE_GET_LOCAL_TZOFFSET(d)   duk_bi_date_get_local_tzoffset_windows((d))
+#else
+#error no provider for DUK_USE_DATE_GET_LOCAL_TZOFFSET()
+#endif
+
+#if defined(DUK_USE_DATE_PARSE_STRING)
+/* External provider already defined. */
+#elif defined(DUK_USE_DATE_PRS_STRPTIME)
+DUK_INTERNAL_DECL duk_bool_t duk_bi_date_parse_string_strptime(duk_context *ctx, const char *str);
+#define DUK_USE_DATE_PARSE_STRING(ctx,str)   duk_bi_date_parse_string_strptime((ctx), (str))
+#elif defined(DUK_USE_DATE_PRS_GETDATE)
+DUK_INTERNAL_DECL duk_bool_t duk_bi_date_parse_string_getdate(duk_context *ctx, const char *str);
+#define DUK_USE_DATE_PARSE_STRING(ctx,str)   duk_bi_date_parse_string_getdate((ctx), (str))
+#else
+/* No provider for DUK_USE_DATE_PARSE_STRING(), fall back to ISO 8601 only. */
+#endif
+
+#if defined(DUK_USE_DATE_FORMAT_STRING)
+/* External provider already defined. */
+#elif defined(DUK_USE_DATE_FMT_STRFTIME)
+DUK_INTERNAL_DECL duk_bool_t duk_bi_date_format_parts_strftime(duk_context *ctx, duk_int_t *parts, duk_int_t tzoffset, duk_small_uint_t flags);
+#define DUK_USE_DATE_FORMAT_STRING(ctx,parts,tzoffset,flags) \
+	duk_bi_date_format_parts_strftime((ctx), (parts), (tzoffset), (flags))
+#else
+/* No provider for DUK_USE_DATE_FORMAT_STRING(), fall back to ISO 8601 only. */
+#endif
+
+#endif  /* DUK_COMPILING_DUKTAPE */
+
+/*
  *  User declarations
  */
 
@@ -2978,12 +3042,118 @@ typedef FILE duk_file;
  *  Alternative customization header
  *
  *  If you want to modify the final DUK_USE_xxx flags directly (without
- *  using the available DUK_OPT_Xxx flags), define DUK_OPT_HAVE_CUSTOM_H
+ *  using the available DUK_OPT_xxx flags), define DUK_OPT_HAVE_CUSTOM_H
  *  and tweak the final flags there.
  */
 
 #if defined(DUK_OPT_HAVE_CUSTOM_H)
 #include "duk_custom.h"
+#endif
+
+/*
+ *  Sanity check for the final effective internal defines.  Also
+ *  double checks user tweaks made by an optional duk_custom.h header.
+ */
+
+/*
+ *  Deprecated feature options.
+ *
+ *  Catch so that user more easily notices and updates build.
+ */
+
+#if defined(DUK_OPT_NO_FUNC_STMT)
+#error DUK_OPT_NO_FUNC_STMT is deprecated, use DUK_OPT_NO_NONSTD_FUNC_STMT
+#endif
+
+#if defined(DUK_OPT_FUNC_NONSTD_CALLER_PROPERTY)
+#error DUK_OPT_FUNC_NONSTD_CALLER_PROPERTY is deprecated, use DUK_OPT_NONSTD_FUNC_CALLER_PROPERTY
+#endif
+
+#if defined(DUK_OPT_FUNC_NONSTD_SOURCE_PROPERTY)
+#error DUK_OPT_FUNC_NONSTD_SOURCE_PROPERTY is deprecated, use DUK_OPT_NONSTD_FUNC_SOURCE_PROPERTY
+#endif
+
+#if defined(DUK_OPT_NO_ARRAY_SPLICE_NONSTD_DELCOUNT)
+#error DUK_OPT_NO_ARRAY_SPLICE_NONSTD_DELCOUNT is deprecated, use DUK_OPT_NO_NONSTD_ARRAY_SPLICE_DELCOUNT
+#endif
+
+#if defined(DUK_OPT_NO_OBJECT_ES6_PROTO_PROPERTY)
+#error DUK_OPT_NO_OBJECT_ES6_PROTO_PROPERTY is deprecated, use DUK_OPT_NO_ES6_OBJECT_PROTO_PROPERTY
+#endif
+
+#if defined(DUK_OPT_NO_OBJECT_ES6_SETPROTOTYPEOF)
+#error DUK_OPT_NO_OBJECT_ES6_SETPROTOTYPEOF is deprecated, use DUK_OPT_NO_ES6_OBJECT_SETPROTOTYPEOF
+#endif
+
+#if defined(DUK_OPT_NO_JSONX)
+#error DUK_OPT_NO_JSONX is deprecated, use DUK_OPT_NO_JX
+#endif
+
+#if defined(DUK_OPT_NO_JSONC)
+#error DUK_OPT_NO_JSONC is deprecated, use DUK_OPT_NO_JC
+#endif
+
+/*
+ *  Debug print consistency
+ */
+
+#if defined(DUK_USE_DPRINT) && !defined(DUK_USE_DEBUG)
+#error DUK_USE_DPRINT without DUK_USE_DEBUG
+#endif
+
+#if defined(DUK_USE_DDPRINT) && !defined(DUK_USE_DEBUG)
+#error DUK_USE_DDPRINT without DUK_USE_DEBUG
+#endif
+
+#if defined(DUK_USE_DDDPRINT) && !defined(DUK_USE_DEBUG)
+#error DUK_USE_DDDPRINT without DUK_USE_DEBUG
+#endif
+
+#if defined(DUK_USE_HEAPPTR16) && defined(DUK_USE_DEBUG)
+/* Debug code doesn't have access to 'heap' so it cannot decode pointers. */
+#error debug printing cannot currently be used with heap pointer compression
+#endif
+
+/*
+ *  Debugger consistency
+ */
+
+#if defined(DUK_USE_DEBUGGER_SUPPORT)
+#if !defined(DUK_USE_INTERRUPT_COUNTER)
+#error DUK_USE_INTERRUPT_COUNTER is needed when debugger support is enabled
+#endif
+#if !defined(DUK_USE_PC2LINE)
+#error DUK_USE_PC2LINE is needed when debugger support is enabled
+#endif
+#endif
+
+/*
+ *  Garbage collection consistency
+ */
+
+#if defined(DUK_USE_REFERENCE_COUNTING) && !defined(DUK_USE_DOUBLE_LINKED_HEAP)
+#error DUK_USE_REFERENCE_COUNTING defined without DUK_USE_DOUBLE_LINKED_HEAP
+#endif
+
+#if defined(DUK_USE_GC_TORTURE) && !defined(DUK_USE_MARK_AND_SWEEP)
+#error DUK_USE_GC_TORTURE defined without DUK_USE_MARK_AND_SWEEP
+#endif
+
+/*
+ *  Low memory feature consistency
+ */
+
+#if defined(DUK_USE_OBJSIZES16)
+#if defined(DUK_USE_HOBJECT_HASH_PART)
+#error DUK_USE_OBJSIZES16 assumes DUK_USE_HOBJECT_HASH_PART is not defined
+#endif
+#endif
+
+#if defined(DUK_USE_STRTAB_CHAIN) && defined(DUK_USE_STRTAB_PROBE)
+#error both DUK_USE_STRTAB_CHAIN and DUK_USE_STRTAB_PROBE defined
+#endif
+#if !defined(DUK_USE_STRTAB_CHAIN) && !defined(DUK_USE_STRTAB_PROBE)
+#error neither DUK_USE_STRTAB_CHAIN nor DUK_USE_STRTAB_PROBE is defined
 #endif
 
 #endif  /* DUK_FEATURES_H_INCLUDED */
