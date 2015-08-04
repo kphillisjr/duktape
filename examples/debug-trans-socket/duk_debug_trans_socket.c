@@ -10,10 +10,28 @@
 
 #include <stdio.h>
 #include <string.h>
+#ifdef WIN32
+#include <winsock2.h>
+#include <Ws2tcpip.h>
+#include <sys/utime.h>
+// Windows uses 32-bit pointers for winsock
+#ifndef socklen_t
+#define socklen_t int
+#endif
+#ifndef ssize_t
+#define ssize_t SSIZE_T
+#endif
+#ifndef INFTIM
+#define INFTIM -1
+#endif
+#pragma comment(lib, "Ws2_32.lib")
+#else
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <poll.h>
+#endif
+
 #include <errno.h>
 #include "duktape.h"
 
@@ -28,11 +46,121 @@
 static int server_sock = -1;
 static int client_sock = -1;
 
+/* Socket porability helper functions. */
+int duk_open_socket(int af, int type, int proto)
+{
+	int return_value = socket(af, type, proto);
+#ifdef _WIN32
+	if (return_value == INVALID_SOCKET) {
+		fprintf(stderr, "socket failed with error: %ld\n", WSAGetLastError());
+		WSACleanup();
+		return -1;
+	}
+#endif
+	return return_value;
+}
+void duk_close_socket(int socket)
+{
+#ifdef WIN32
+	closesocket(socket);
+#else
+	(void)close(socket);
+#endif
+}
+
+int duk_accept_socket(int socket, struct sockaddr * addr, int* addrlen)
+{
+	int return_value = accept(socket, addr, addrlen);
+#ifdef _WIN32
+	if (return_value == INVALID_SOCKET) {
+		fprintf(stderr, "socket failed with error: %ld\n", WSAGetLastError());
+		WSACleanup();
+		return -1;
+	}
+#endif
+	return return_value;
+}
+
+int duk_poll_socket(struct pollfd *fds, int nfds, int timeout)
+{
+#ifdef _WIN32
+	FILETIME PollStart = { 0, 0 }, PollEnd;
+	u_long availableData = 0;
+	int socketRes = 0;
+	struct timeval tv;
+	tv.tv_sec = 0;
+	tv.tv_usec = 999; // Just under 1 Millisecond
+	GetSystemTimeAsFileTime(&PollStart);
+	// 1ms = 1000000 ns -> 
+	// 0.0001
+	//timeout *10000; // The Resolution of this timer is way too high.
+win32RePoll:
+	socketRes = ioctlsocket(fds->fd, FIONREAD, &availableData);
+	if (socketRes == SOCKET_ERROR)
+	{
+		fprintf(stderr, "socket failed with error: %ld\n", WSAGetLastError());
+		WSACleanup();
+		return -1;
+	}
+	if (availableData)
+		return 1;
+	else {
+		return 0;
+	}
+	switch (timeout)
+	{
+	case 0:
+		break; // Finish Immediately.
+	case INFTIM:
+		goto win32RePoll;
+	default:
+
+		select(0, NULL, NULL, NULL, &tv); // Use for Quick Sleep.
+		timeout--;
+		goto win32RePoll;
+
+	}
+
+	return -1;
+#else
+	return (int)poll(fds, nfds, timeout);
+#endif
+}
+
+int duk_write_socket(SOCKET socket, const void* buffer, int length)
+{
+#ifdef _WIN32
+	return send(socket, (char*)buffer, length, 0);
+#else
+	return write(client_sock, buffer, (size_t)length);
+#endif
+}
+
+SSIZE_T duk_read_socket(int socket, void *buf, size_t nbyte)
+{
+#ifdef _WIN32
+	int result = recv(socket, (char*)buf, (int)nbyte, 0);
+	return (SSIZE_T)result;
+#else
+	return read(socket, (void *)buffer, (size_t)length);
+#endif
+}
+
+
 void duk_debug_trans_socket_init(void) {
 	struct sockaddr_in addr;
 	int on;
+#ifdef WIN32
+	WSADATA wsadata;
+	int err;
 
-	server_sock = socket(AF_INET, SOCK_STREAM, 0);
+	err = WSAStartup(MAKEWORD(2, 0), &wsadata);
+	if (err != 0) {
+		fprintf(stderr, "WSAStartup failed with error: %d\n", err);
+		goto fail;
+	}
+#endif
+	server_sock = duk_open_socket(AF_INET, SOCK_STREAM, 0);
 	if (server_sock < 0) {
 		fprintf(stderr, "%s: failed to create server socket: %s\n", __FILE__, strerror(errno));
 		fflush(stderr);
@@ -62,9 +190,17 @@ void duk_debug_trans_socket_init(void) {
 
  fail:
 	if (server_sock >= 0) {
-		(void) close(server_sock);
+		duk_close_socket(server_sock);
 		server_sock = -1;
 	}
+}
+
+
+void duk_debug_trans_socket_finish(void)
+{
+#ifdef WIN32
+	WSACleanup();
+#endif
 }
 
 void duk_debug_trans_socket_waitconn(void) {
@@ -77,7 +213,7 @@ void duk_debug_trans_socket_waitconn(void) {
 		return;
 	}
 	if (client_sock >= 0) {
-		(void) close(client_sock);
+		duk_close_socket(client_sock);
 		client_sock = -1;
 	}
 
@@ -85,7 +221,7 @@ void duk_debug_trans_socket_waitconn(void) {
 	fflush(stderr);
 
 	sz = (socklen_t) sizeof(addr);
-	client_sock = accept(server_sock, (struct sockaddr *) &addr, &sz);
+	client_sock = duk_accept_socket(server_sock, (struct sockaddr *) &addr, &sz);
 	if (client_sock < 0) {
 		fprintf(stderr, "%s: accept() failed, skip waiting for connection: %s\n", __FILE__, strerror(errno));
 		fflush(stderr);
@@ -101,21 +237,25 @@ void duk_debug_trans_socket_waitconn(void) {
 	 */
 
 	if (server_sock >= 0) {
-		(void) close(server_sock);
+		duk_close_socket(server_sock);
 		server_sock = -1;
 	}
 	return;
 
  fail:
 	if (client_sock >= 0) {
-		(void) close(client_sock);
+		duk_close_socket(client_sock);
 		client_sock = -1;
 	}
 }
 
 /* Duktape debug transport callback: partial read */
 duk_size_t duk_debug_trans_socket_read(void *udata, char *buffer, duk_size_t length) {
+#ifdef WIN32
+	int ret;
+#else
 	ssize_t ret;
+#endif
 
 	(void) udata;  /* not needed by the example */
 
@@ -147,7 +287,7 @@ duk_size_t duk_debug_trans_socket_read(void *udata, char *buffer, duk_size_t len
 	 * timeout here to recover from "black hole" disconnects.
 	 */
 
-	ret = read(client_sock, (void *) buffer, (size_t) length);
+	ret = duk_read_socket(client_sock, (void *)buffer, (size_t)length);
 	if (ret < 0) {
 		fprintf(stderr, "%s: debug read failed, errno %d, closing connection: %s\n", __FILE__, errno, strerror(errno));
 		fflush(stderr);
@@ -166,7 +306,7 @@ duk_size_t duk_debug_trans_socket_read(void *udata, char *buffer, duk_size_t len
 
  fail:
 	if (client_sock >= 0) {
-		(void) close(client_sock);
+		duk_close_socket(client_sock);
 		client_sock = -1;
 	}
 	return 0;
@@ -174,7 +314,11 @@ duk_size_t duk_debug_trans_socket_read(void *udata, char *buffer, duk_size_t len
 
 /* Duktape debug transport callback: partial write */
 duk_size_t duk_debug_trans_socket_write(void *udata, const char *buffer, duk_size_t length) {
+#ifdef WIN32
+	int ret;
+#else
 	ssize_t ret;
+#endif
 
 	(void) udata;  /* not needed by the example */
 
@@ -206,7 +350,7 @@ duk_size_t duk_debug_trans_socket_write(void *udata, const char *buffer, duk_siz
 	 * timeout here to recover from "black hole" disconnects.
 	 */
 
-	ret = write(client_sock, (const void *) buffer, (size_t) length);
+	ret = duk_write_socket(client_sock, (const void *)buffer, length);
 	if (ret <= 0 || ret > (ssize_t) length) {
 		fprintf(stderr, "%s: debug write failed, closing connection: %s\n", __FILE__, strerror(errno));
 		fflush(stderr);
@@ -217,7 +361,7 @@ duk_size_t duk_debug_trans_socket_write(void *udata, const char *buffer, duk_siz
 
  fail:
 	if (client_sock >= 0) {
-		(void) close(client_sock);
+		duk_close_socket(client_sock);
 		client_sock = -1;
 	}
 	return 0;
@@ -238,7 +382,7 @@ duk_size_t duk_debug_trans_socket_peek(void *udata) {
 	fds[0].events = POLLIN;
 	fds[0].revents = 0;
 
-	poll_rc = poll(fds, 1, 0);
+	poll_rc = duk_poll_socket(fds, 1, 0);
 	if (poll_rc < 0) {
 		fprintf(stderr, "%s: poll returned < 0, closing connection: %s\n", __FILE__, strerror(errno));
 		fflush(stderr);
@@ -255,7 +399,7 @@ duk_size_t duk_debug_trans_socket_peek(void *udata) {
 
  fail:
 	if (client_sock >= 0) {
-		(void) close(client_sock);
+		duk_close_socket(client_sock);
 		client_sock = -1;
 	}
 	return 0;
