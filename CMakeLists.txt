@@ -17,6 +17,7 @@ option(DUKTAPE_BUILD_EXAMPLES "Build Example Code" ON)
 option(DUKTAPE_BUILD_SHARED "Build duktape as a Shared library" OFF)
 option(DUKTAPE_DEBUGGER_SUPPORT "Build duktape with Debugger Support." ON)
 option(DUKTAPE_DEBUGGER_JQUERY  "Build duktape with Debugger Support." ON)
+option(DUKTAPE_ENABLE_CODE_POLICY_CHECK "Add Code Policy Target to Build" ON)
 
 if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
 	include(CMake-build-git.cmake)
@@ -50,6 +51,10 @@ endif()
 if(DUKTAPE_DEBUGGER_JQUERY)
 	#TODO: Add debugger path
 	include(CMake-build-debugger.cmake)
+endif()
+
+if(DUKTAPE_ENABLE_CODE_POLICY_CHECK)
+	include(CMake-check-code-policy.cmake)
 endif()
 
 # Create The Core Include file.
