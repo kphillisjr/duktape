@@ -15,6 +15,8 @@ MATH( EXPR DUKTAPE_COMPACT_VERSION "
 		# Convert the DukTape Version to Follow Semantics
 option(DUKTAPE_BUILD_EXAMPLES "Build Example Code" ON)
 option(DUKTAPE_BUILD_SHARED "Build duktape as a Shared library" OFF)
+option(DUKTAPE_DEBUGGER_SUPPORT "Build duktape with Debugger Support." ON)
+option(DUKTAPE_DEBUGGER_JQUERY  "Build duktape with Debugger Support." ON)
 
 if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
 	include(CMake-build-git.cmake)
@@ -35,7 +37,20 @@ else()
 	file(GLOB DUKTAPE_LIB_C_SRC "src/duktape.c")
 endif()
 
-
+if(DUKTAPE_DEBUGGER_SUPPORT)
+	# These Options are used for Basic Debugging support.
+	add_definitions(
+		-DDUK_OPT_DEBUGGER_SUPPORT         # enable debugger support in Duktape
+		-DDUK_OPT_INTERRUPT_COUNTER        # prerequisite for debugging
+		-DDUK_OPT_DEBUGGER_FWD_PRINTALERT  # optional debugger features
+		-DDUK_OPT_DEBUGGER_FWD_LOGGING     # Debug Logging Printouts
+		-DDUK_OPT_DEBUGGER_DUMPHEAP
+	)
+endif()
+if(DUKTAPE_DEBUGGER_JQUERY)
+	#TODO: Add debugger path
+	include(CMake-build-debugger.cmake)
+endif()
 
 # Create The Core Include file.
 include_directories(${PROJECT_SOURCE_DIR}/src )
@@ -44,4 +59,12 @@ if(DUKTAPE_BUILD_SHARED)
 	add_library(duktape SHARED ${DUKTAPE_LIB_C_SRC})
 else()
 	add_library(duktape STATIC ${DUKTAPE_LIB_C_SRC})
+endif()
+
+
+if(DUKTAPE_BUILD_EXAMPLES)
+	add_subdirectory(examples)
+endif()
+if(DUKTAPE_DEBUGGER_SUPPORT AND DUKTAPE_DEBUGGER_JQUERY)
+	add_subdirectory(debugger)
 endif()
