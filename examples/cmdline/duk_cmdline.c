@@ -762,6 +762,11 @@ int main(int argc, char *argv[]) {
 	 */
 
  cleanup:
+#ifdef DUK_CMDLINE_DEBUGGER_SUPPORT
+	if(debugger) {
+		duk_debug_trans_socket_finish();
+	}
+#endif
 	if (interactive) {
 		fprintf(stderr, "Cleaning up...\n");
 		fflush(stderr);
